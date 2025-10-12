@@ -55,3 +55,19 @@ venv.bak/
 
 # Swap files
 *.swp
+
+# Local files, scratch files
+out*.txt
+sandbox.txt
+sandbox_ext/
+tests/
+OGallcode.txt
+foo/
+verify_test.py
+out.txt
+sandbox/
+__pycache__
+.DS_Store
+*.pyc
+**/_currentcode*.txt
+/tests/out*.txt

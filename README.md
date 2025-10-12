@@ -1,189 +1,178 @@
 # All Code Aggregator
 
-## Overview
+Snapshot your project into one readable text file: a compact directory tree followed by file-by-file sections. Perfect for review packets, sharing with AI tools, or quick audits.
+This is a focused PR on exclusion controls and clarity.
 
-The **All Code Aggregator** script consolidates all programming-related code files in the current directory into a single `full_code.txt` file. This is especially useful for providing your entire codebase to AI models for analysis or assistance.
+---
 
-## Features
+# What’s new in this PR (exclusions + clarity)
 
-- **Directory Tree Generation**: Creates an ASCII representation of the directory structure, excluding specified directories.
-- **Code Aggregation**: Combines contents of programming-related files into a master file.
-- **Customizable Inclusions/Exclusions**: Easily specify which files or directories to include or exclude.
-- **Clipboard Output**: Use `-c` to copy the results directly to your clipboard on macOS and Windows 10+.
+## Excluding directories via -e
 
-## Setup
+- Previously: -e replaced the entire default excluded set (could accidentally re-include node_modules/.venv if you weren’t careful).
+- Now: -e is additive by default; use --replace-exclude-dirs to replace the set intentionally.
 
-1. **From Github**
+## What the directory tree shows
 
-```shell
-pip install git+https://github.com/foxalabs/all_code@0.4.0
-```
+- Previously: Only default-excluded dirs (like node_modules, .venv) were tagged [EXCLUDED]; individual files excluded by flags weren’t called out in the tree.
+- Now: Files excluded via --exclude-files or -X are marked [EXCLUDED] in the tree so readers see why they’re missing from aggregation.
 
-2. **From local directory**
+## Which directories can be excluded
 
-To install from a local directory, use edit mode so your code changes are reflected immediately. This is useful for development/debugging mode.
-```shell
+- Previously: Exclusion was based on directory names supplied via -e and a fixed default name set.
+- Now: -e accepts names or paths; you can exclude by name or path-prefix, and you can replace the defaults via --replace-exclude-dirs.
+
+## File-level excludes
+
+- Previously: No --exclude-files flag; exclusion was directory-based (plus extension denylist via -X).
+- Now: --exclude-files supports comma-separated globs or exact paths (absolute or project-relative).
+
+## Extension rules
+
+- Previously: -x (allowlist) replaced the entire default set of allowed extension. Denylist precedence was not made clear.
+- Now: Documented precedence: -X (denylist) overrides -x (allowlist). Clearer mental model.
+
+## Output path convenience
+
+- Previously: -o could point to a subpath if it already existed (not documented clearly).
+- Now: Documented: -o accepts a subpath; create the folder first (e.g., -o tests/output.txt).
+
+## Test runner portability (developer experience)
+
+Previously: Tests invoked “python” directly (could call the wrong interpreter).
+Now: Tests invoke sys.executable so they use the active interpreter (virtualenv-friendly).
+
+> None of these change defaults; they’re opt-in immediately after the changes block for emphasis.
+
+## Additional details of changes
+
+- Files excluded due to a user-specified extension exclusion are marked as [EXCLUDED] in the tree overview and not traversed.
+- Default excluded dirs (e.g. `node_modules`, `.venv`) are also marked once with `[EXCLUDED]` and not traversed.
+- `--self` — include `all_code.py` in output (hidden by default to avoid self-inclusion).
+
+## Installation
+
+**From GitHub (original project)**
+
+```bash
 git clone https://github.com/foxalabs/all_code.git
 cd all_code
 pip install -e .
 ```
 
-## Usage
-**Basic usage**
+Install this PR from my fork (for reviewers)
+
 ```bash
-all-code
+pip install git+https://github.com/hamzadev3/all_code@feature/exclusions
 ```
 
-**Specify a Directory**
-```bash
-all-code -d /path/to/start/directory
-```
+# Usage
 
-**Copy Aggregated Content to Clipboard Instead of Writing to File** (macOS and Windows 10+)
-```bash
-all-code -c
-```
+## Help
 
-**Combine Both Arguments: Specify Directory and Copy to Clipboard**
-```bash
-all-code -d /path/to/start/directory -c
-```
-
-**Exclude Specific File Extensions**
-```bash
-all-code -X .json,.md,.html
-```
-**Combine Multiple Options: Specify Directory, Copy to Clipboard, and Exclude Extensions**
-```bash
-all-code -d /path/to/start/directory -c -X .json,.md,.html
-```
-
-**More options**
 ```bash
 all-code --help
-usage: all_code.py [-h] [-c] [-d DIRECTORY] [-o OUTPUT_FILE] [-i INCLUDE_FILES] [-x EXTENSIONS] [-e EXCLUDE_DIRS]
-
-Aggregate code files into a master file with a directory tree.
-
-options:
-  -h, --help            show this help message and exit
-  -c, --clipboard       Copy the aggregated content to the clipboard instead of writing to a file.
-  -d, --directory DIRECTORY
-                        Specify the directory to start aggregation from. Defaults to the current working directory.
-  -o, --output-file OUTPUT_FILE
-                        Name of the output file. Defaults to full_code.txt.
-  -i, --include-files INCLUDE_FILES
-                        Comma-separated list of files to include. If not provided, all files are included.
-  -x, --extensions EXTENSIONS
-                        Comma-separated list of programming extensions to use. Replaces the default set if provided.
-  -e, --exclude-dirs EXCLUDE_DIRS
-                        Comma-separated list of directories to exclude. Replaces the default set if provided.
-  -X, --exclude-extensions EXCLUDE_EXTENSIONS
-                        Comma-separated list of file extensions to exclude from aggregation.
 ```
 
-## Exclusions
+## Specify directory
 
-The **All Code Aggregator** script automatically excludes specific directories and files to streamline the aggregation process and avoid including unnecessary or sensitive information.
-
-### Excluded Directories
-
-The following directories are excluded by default:
-
-- `venv`
-- `.venv`
-- `node_modules`
-- `__pycache__`
-- `.git`
-- `dist`
-- `build`
-- `temp`
-- `old_files`
-- `flask_session`
-
-**Purpose**: These directories are typically used for virtual environments, dependencies, build artifacts, version control, or temporary files that are not part of the core codebase.
-
-### Excluded Extensions
-
-Users can now exclude specific file extensions using the `-X` or `--exclude-extensions` argument.
-
-**Example:**
 ```bash
-all-code -X .json,.md,.html
+all-code -d /path/to/project -o output.txt
 ```
-This will exclude all .json, .md, and .html files from aggregation.
 
-## Example Output to full_code.txt
+## Copy to clipboard (macOS / Windows 10+)
+
+```bash
+all-code -d /path/to/project -c
+```
+
+## Output to a subfolder of directory
+
+```bash
+mkdir -p tests
+all-code -d /path/to/project -o tests/output.txt
+```
+
+## Exclude by glob or exact path
+
+```bash
+all-code -d /path/to/project -o output.txt --exclude-files "foo/*.json,**/secrets.*"
+```
+
+## Replace all default exclusions entirely, then add your own exclusion
+
+```bash
+all-code -d /path/to/project -o output.txt --replace-exclude-dirs -e "my_generated,build-cache"
+```
+
+## Allowlist extensions (denylist wins if both set)
+
+```bash
+all-code -d /path/to/project -o output.txt -x ".py,.ts"
+all-code -d /path/to/project -o output.txt -X ".py"
+```
+
+- `-x` allows extensions that may have been left out of the hardcoded set of accepted extensions
+- `-X` denies them. In this case, -X takes priority
+
+## Add more excluded dirs (keeps defaults)
+
+```bash
+all-code -d /path/to/project -o output.txt -e "secret,bar"
+```
+
+## Replace default excluded dirs entirely
+
+```bash
+all-code -d /path/to/project -o output.txt --replace-exclude-dirs -e "my_generated,build-cache"
+```
+
+## Include the tool itself
+
+```bash
+all-code -o output.txt --self
+```
+
+# Output format
+
 ```
 Directory Tree:
-all_code/
-│   ├── full_code.txt
-│   ├── README.md
-│   ├── test.py
-│   ├── .git/ [EXCLUDED]
-│   ├── demo_folder/
-│   │   ├── another_file.js
-
-
-
+project/
+│   ├── src/
+│   │   ├── main.py
+│   ├── node_modules/ [EXCLUDED]
 
 # ======================
-# File: test.py
+# File: src/main.py
 # ======================
 
-def greet(name):
-    return f"Hello, {name}!"
-
-if __name__ == "__main__":
-    print(greet("World"))
-    def farewell(name):
-        return f"Goodbye, {name}!"
-
-    print(farewell("World"))
-
-# ======================
-# File: demo_folder\another_file.js
-# ======================
-
-// another_file.js
-
-// Function to add two numbers
-function add(a, b) {
-    return a + b;
-}
-
-// Function to subtract two numbers
-function subtract(a, b) {
-    return a - b;
-}
-
-// Function to multiply two numbers
-function multiply(a, b) {
-    return a * b;
-}
-
-// Function to divide two numbers
-function divide(a, b) {
-    if (b === 0) {
-        throw new Error("Division by zero is not allowed.");
-    }
-    return a / b;
-}
-
-// Example usage
-console.log("Add: " + add(5, 3));         // Output: Add: 8
-console.log("Subtract: " + subtract(5, 3)); // Output: Subtract: 2
-console.log("Multiply: " + multiply(5, 3)); // Output: Multiply: 15
-console.log("Divide: " + divide(5, 3));     // Output: Divide: 1.6666666666666667
+print("hello world")
 ```
 
+# Defaults & Notes
 
-## Testing the script
+- Default excluded directories (not traversed): node_modules, .venv, venv, pycache, .git, dist, build, temp, old_files, flask_session.
 
-If you want to test the script, run the following command.
+- By default, only “programming-like” extensions are aggregated. Use -x to override or -X to deny specific extensions.
+
+- Clipboard support is implemented for macOS (pbcopy) and Windows (clip).
+
+# Testing
+
+- Run the following command
 
 ```bash
 python test_all_code.py
 ```
 
-As of the current commit, only the command line args and their effects were tested, but more tests can be added in the future.
+# Changelog (this PR)
+
+- Directory tree now marks user-excluded files with [EXCLUDED].
+
+- Allow file path exclusion in addition to file name exclusion.
+
+- Add --exclude-files, --replace-exclude-dirs, --self.
+
+- Make -e additive by default (use --replace-exclude-dirs to replace the entire directory).
+
+- Clarity: -X (denylist) beats -x (allowlist).
