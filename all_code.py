@@ -170,7 +170,7 @@ def make_is_tree_excluded_file(exclude_file_globs, excluded_exts, startpath):
     Tree-exclusion predicate. Used by the directory-tree printer only.
     Non-programming files are *not* tagged excluded just because they won't be aggregated.
     """
-    
+
     def _pred(filepath: str) -> bool:
         # extension-based denylist (user-provided -X)
         _, ext = os.path.splitext(filepath)
@@ -179,17 +179,8 @@ def make_is_tree_excluded_file(exclude_file_globs, excluded_exts, startpath):
             return True
 
         # --exclude-files globs or exact paths (abs or project-relative)
-        if exclude_file_globs:
-            abs_path = os.path.abspath(filepath)
-            rel_path = os.path.relpath(filepath, startpath)
-            for pat in exclude_file_globs:
-                if (
-                    fnmatch.fnmatch(abs_path, pat)
-                    or fnmatch.fnmatch(rel_path, pat)
-                    or abs_path == pat
-                    or rel_path == pat
-                ):
-                    return True
+        if exclude_file_globs and file_matches_exclude(filepath, exclude_file_globs, startpath):
+            return True
 
         return False
 
@@ -229,6 +220,28 @@ def should_include_file(file_path):
         return True  # Include all files if the list is empty
     rel_file_path = os.path.relpath(file_path)
     return rel_file_path in FILES_TO_INCLUDE
+
+
+def file_matches_exclude(filepath: str, exclude_file_globs, startpath: str) -> bool:
+    """
+    Match file against user-provided exclude patterns.
+    All comparisons are done on normalized absolute paths.
+    """
+    try:
+        abs_path = str(pathlib.Path(filepath).resolve())
+    except Exception:
+        abs_path = os.path.normpath(os.path.abspath(filepath))
+
+    for pat in exclude_file_globs:
+        # Exact match
+        if abs_path == pat:
+            return True
+
+        # Glob match
+        if fnmatch.fnmatch(abs_path, pat):
+            return True
+
+    return False
 
 
 def parse_arguments():
@@ -280,7 +293,7 @@ def parse_arguments():
         help="Comma-separated list of file extensions to exclude.",
     )
     """
-    Additional parser arguments:  
+    Additional parser arguments:
     """
     parser.add_argument(
         "-e",
@@ -364,7 +377,7 @@ def main():
         EXCLUDE_EXTENSIONS = {
             ext.strip() for ext in args.exclude_extensions.split(",") if ext.strip()
         }
-        
+
     # Users may include this script in output via --self.
     # By default we hide it to prevent the tool from including itself.
     if not args.self:
@@ -408,8 +421,21 @@ def main():
             exclude_dir_prefixes.append(prefix)
 
     # 3) File-level excludes (exact and glob)
-    exclude_file_globs = _split_csv(args.exclude_files)
-    
+    # Normalize --exclude-files patterns (relative → startpath, remove ./, fix slashes)
+    exclude_file_globs = []
+    for raw in _split_csv(args.exclude_files):
+        pat = os.path.expanduser(raw)
+
+        # If relative, anchor to startpath (NOT cwd)
+        if not os.path.isabs(pat):
+            pat = os.path.join(startpath, pat)
+
+        try:
+            pat = str(pathlib.Path(pat).resolve())
+        except Exception:
+            pat = os.path.normpath(pat)
+
+        exclude_file_globs.append(pat)
 
     # 4) Extension sets (NBSP-safe)
     excluded_exts = set(_split_csv(args.exclude_extensions))
@@ -444,7 +470,7 @@ def main():
         - matches --exclude-files (abs or project-relative)
         - legacy exclude set (EXCLUDE_FILES)
         """
-        
+
         # extension-based exclusions
         _, ext = os.path.splitext(filepath)
         ext = ext.lower()
@@ -453,17 +479,9 @@ def main():
         if allowed_exts and ext and ext not in allowed_exts:
             return True
         # file globs and exact matches (abs + project-relative)
-        if exclude_file_globs:
-            abs_path = os.path.abspath(filepath)
-            rel_path = os.path.relpath(filepath, startpath)
-            for pat in exclude_file_globs:
-                if (
-                    fnmatch.fnmatch(abs_path, pat)
-                    or fnmatch.fnmatch(rel_path, pat)
-                    or abs_path == pat
-                    or rel_path == pat
-                ):
-                    return True
+        if exclude_file_globs and file_matches_exclude(filepath, exclude_file_globs, startpath):
+            return True
+
         # legacy file set
         if os.path.basename(filepath) in EXCLUDE_FILES:
             return True
@@ -473,7 +491,7 @@ def main():
     #  1) print the tree (with explicit [EXCLUDED] tags for user-excludes)
     #  2) walk again to aggregate file contents (pruning excluded dirs)
     aggregated_content = "Directory Tree:\n" + directory_tree + "\n\n"
-    
+
     # Traverse the directory again to process files
     for root, dirs, files in os.walk(startpath):
         # NEW: prune directories in-place so os.walk does not descend into excluded dirs
@@ -495,7 +513,7 @@ def main():
                 continue
 
             if not should_include_file(file_path):
-                continue 
+                continue
 
             # Get relative path for headers
             rel_file_path = os.path.relpath(file_path, startpath)
