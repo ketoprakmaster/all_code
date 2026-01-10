@@ -211,6 +211,109 @@ def test_exclude_files_glob():
         assert "KEEP_ME" in content, "Non-excluded file should be included"
         print("test_exclude_files_glob() passed.")
 
+def test_exclude_files_absolute_path():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+
+        cfg = os.path.join(tmpdir, "foo", "config.json")
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write('{"abs": true}')
+
+        run_script(
+            ["-d", tmpdir, "--exclude-files", cfg],
+            cwd=tmpdir,
+        )
+
+        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert '{"abs": true}' not in content
+        print("test_exclude_files_absolute_path() passed.")
+
+def test_exclude_files_dot_slash():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+
+        cfg = os.path.join(tmpdir, "foo", "config.json")
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write('{"dot": true}')
+
+        run_script(
+            ["-d", tmpdir, "--exclude-files", "./foo/config.json"],
+            cwd=tmpdir,
+        )
+
+        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert "config.json [EXCLUDED]" in content
+        assert '{"dot": true}' not in content
+        print("test_exclude_files_dot_slash() passed.")
+
+def test_exclude_files_cwd_differs_from_startpath():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        project = os.path.join(tmpdir, "project")
+        os.makedirs(os.path.join(project, "foo"), exist_ok=True)
+
+        cfg = os.path.join(project, "foo", "config.json")
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write('{"cwd": true}')
+
+        run_script(
+            ["-d", "project", "--exclude-files", "./foo/config.json"],
+            cwd=tmpdir,
+        )
+
+        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert '{"cwd": true}' not in content
+        print("test_exclude_files_cwd_differs_from_startpath() passed.")
+
+def test_exclude_files_dot_slash_glob():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+
+        cfg = os.path.join(tmpdir, "foo", "config.json")
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write('{"glob": true}')
+
+        run_script(
+            ["-d", tmpdir, "--exclude-files", "./foo/*.json"],
+            cwd=tmpdir,
+        )
+
+        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert '{"glob": true}' not in content
+        print("test_exclude_files_dot_slash_glob() passed.")
+
+def test_exclude_files_backslash_path():
+    if os.name != "nt":
+        print("Backslash paths are Windows-only")
+        return
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+
+        cfg = os.path.join(tmpdir, "foo", "config.json")
+        with open(cfg, "w", encoding="utf-8") as f:
+            f.write('{"win": true}')
+
+        win_style = os.path.join("foo", "config.json").replace("/", "\\")
+
+        run_script(
+            ["-d", tmpdir, "--exclude-files", win_style],
+            cwd=tmpdir,
+        )
+
+        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
+            content = f.read()
+
+        assert '{"win": true}' not in content
+        print("test_exclude_files_backslash_path() passed.")
+
 def test_replace_exclude_dirs_behavior():
     with tempfile.TemporaryDirectory() as tmpdir:
         node_modules_dir = os.path.join(tmpdir, "node_modules")
@@ -278,6 +381,11 @@ if __name__ == "__main__":
     test_extensions_allowlist()
     test_exclude_dirs_additive()
     test_exclude_files_glob()
+    test_exclude_files_absolute_path()
+    test_exclude_files_backslash_path()
+    test_exclude_files_cwd_differs_from_startpath()
+    test_exclude_files_dot_slash()
+    test_exclude_files_dot_slash_glob()
     test_replace_exclude_dirs_behavior()
     test_extension_precedence_exclude_overrides_allowlist()
     test_tree_not_traversing_excluded()
