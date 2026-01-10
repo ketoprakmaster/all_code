@@ -304,6 +304,7 @@ def parse_arguments():
         help="Replace default excluded directories with the list from -e.",
     )
     parser.add_argument(
+        "-I",
         "--exclude-files",
         default="",
         help="Comma-separated file paths or globs to exclude.",
