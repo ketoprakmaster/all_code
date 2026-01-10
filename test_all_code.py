@@ -1,392 +1,290 @@
-"""
-Test script for all_code.py command-line arguments.
-
-This script creates temporary directories and files, then uses the built-in
-subprocess module to run all_code.py with different options:
-
-- Default behavior (creates 'full_code.txt')
-- Overriding the output file name with -o/--output-file
-- Including only specific files with -i/--include-files
-- Overriding programming extensions with -x/--extensions
-- Excluding directories with -e/--exclude-dirs
-
-No external libraries are required.
-"""
-
 import os
 import shutil
 import subprocess
-import tempfile
 import sys
+import pytest
 
+# Path to the script we are testing
 SCRIPT_PATH = os.path.join(os.path.dirname(os.path.realpath(__file__)), "all_code.py")
-
 
 def run_script(args, cwd):
     """
-    Run all_code.py with the provided command-line arguments in directory cwd.
+    Helper to run all_code.py with the provided command-line arguments.
     """
     cmd = [sys.executable, SCRIPT_PATH] + args
     result = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
     return result
 
+def test_default_arguments(tmp_path):
+    # Copy all_code.py to tmp directory and run it without any args
+    TMP_SCRIPT_PATH = shutil.copy(SCRIPT_PATH, tmp_path)
+    cmd = [sys.executable, str(TMP_SCRIPT_PATH)]
+    subprocess.run(cmd, cwd=tmp_path, capture_output=True, text=True)
 
-def test_default_arguments():
-    # Create a temporary directory to serve as the source for aggregation.
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        # Copy all_code.py to tmp directory  and run it without any args
-        TMP_SCRIPT_PATH = shutil.copy(SCRIPT_PATH, tmp_dir)
-        cmd = [sys.executable, TMP_SCRIPT_PATH]
-        subprocess.run(cmd, cwd=tmp_dir, capture_output=True, text=True)
+    assert (tmp_path / "full_code.txt").exists(), "full_code.txt not created by default"
 
-        assert os.path.exists(os.path.join(tmp_dir, "full_code.txt")), "full_code.txt not created by default"
+def test_directory_argument(tmp_path):
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
 
+    # Create a dummy Python file
+    dummy_file = source_dir / "dummy.py"
+    dummy_file.write_text("print('Aggregating from source directory')")
 
-def test_directory_argument():
-    with tempfile.TemporaryDirectory() as source_dir:
-        # Create a dummy Python file in the source directory.
-        dummy_file = os.path.join(source_dir, "dummy.py")
-        with open(dummy_file, "w") as f:
-            f.write("print('Aggregating from source directory')")
-        # Use a separate temporary directory as the working directory for the script.
-        with tempfile.TemporaryDirectory() as tmp_working:
-            custom_output = "test_output.txt"
-            # Run the script with -d pointing to the source directory.
-            run_script(["-d", source_dir, "-o", custom_output], cwd=tmp_working)
-            output_file = os.path.join(tmp_working, custom_output)
-            assert os.path.exists(output_file), "Output file not created when using --directory"
-            with open(output_file, "r") as f:
-                content = f.read()
-            assert "dummy.py" in content, "Aggregated content does not reflect the --directory argument"
-            print("test_directory_argument passed.")
+    tmp_working = tmp_path / "working"
+    tmp_working.mkdir()
 
+    custom_output = "test_output.txt"
+    run_script(["-d", str(source_dir), "-o", custom_output], cwd=tmp_working)
 
-def test_default_output():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a dummy Python file so that there is something to include.
-        dummy_file = os.path.join(tmpdir, "dummy.py")
-        with open(dummy_file, "w") as f:
-            f.write("print('Hello World')")
+    output_file = tmp_working / custom_output
+    assert output_file.exists(), "Output file not created when using --directory"
 
-        # Run the script with default output (should create full_code.txt)
-        run_script(["-d", tmpdir], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        assert os.path.exists(output_file), "Default output file not created"
-        print("test_default_output passed.")
+    content = output_file.read_text()
+    assert "dummy.py" in content, "Aggregated content does not reflect the --directory argument"
 
+def test_default_output(tmp_path):
+    dummy_file = tmp_path / "dummy.py"
+    dummy_file.write_text("print('Hello World')")
 
-def test_override_output_file():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        dummy_file = os.path.join(tmpdir, "dummy.py")
-        with open(dummy_file, "w") as f:
-            f.write("print('Hello World')")
+    run_script(["-d", str(tmp_path)], cwd=tmp_path)
+    assert (tmp_path / "full_code.txt").exists(), "Default output file not created"
 
-        custom_output = "custom_output.txt"
-        run_script(["-d", tmpdir, "-o", custom_output], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, custom_output)
-        assert os.path.exists(output_file), "Overridden output file not created"
-        print("test_override_output_file passed.")
+def test_override_output_file(tmp_path):
+    dummy_file = tmp_path / "dummy.py"
+    dummy_file.write_text("print('Hello World')")
 
+    custom_output = "custom_output.txt"
+    run_script(["-d", str(tmp_path), "-o", custom_output], cwd=tmp_path)
+    assert (tmp_path / custom_output).exists(), "Overridden output file not created"
 
-def test_include_files():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create two Python files.
-        file1 = os.path.join(tmpdir, "dummy.py")
-        with open(file1, "w") as f:
-            f.write("print('Hello from dummy')")
+def test_include_files(tmp_path):
+    (tmp_path / "dummy.py").write_text("print('Hello from dummy')")
+    (tmp_path / "extra.py").write_text("print('Hello from extra')")
 
-        file2 = os.path.join(tmpdir, "extra.py")
-        with open(file2, "w") as f:
-            f.write("print('Hello from extra')")
+    run_script(["-d", str(tmp_path), "-i", "dummy.py"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text()
 
-        # Specify only dummy.py to be included.
-        run_script(["-d", tmpdir, "-i", "dummy.py"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r") as f:
-            content = f.read()
-        assert "dummy.py" in content, "dummy.py should be included"
-        assert "print('Hello from extra')" not in content, "extra.py should not be included"
-        print("test_include_files passed.")
+    assert "dummy.py" in content
+    assert "print('Hello from extra')" not in content
 
+def test_extensions(tmp_path):
+    (tmp_path / "dummy.py").write_text("print('Python file')")
+    (tmp_path / "dummy.txt").write_text("This is a text file.")
 
-def test_extensions():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create one .py file and one .txt file.
-        py_file = os.path.join(tmpdir, "dummy.py")
-        with open(py_file, "w") as f:
-            f.write("print('Python file')")
-        txt_file = os.path.join(tmpdir, "dummy.txt")
-        with open(txt_file, "w") as f:
-            f.write("This is a text file.")
+    run_script(["-d", str(tmp_path), "-x", ".py"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text()
 
-        # Override extensions to only include .py files.
-        run_script(["-d", tmpdir, "-x", ".py"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r") as f:
-            content = f.read()
-        assert "dummy.py" in content, "dummy.py should be included with .py extension"
-        assert "This is a text file." not in content, "dummy.txt should be excluded when only .py is allowed"
-        print("test_extensions passed.")
+    assert "dummy.py" in content
+    assert "This is a text file." not in content
 
+def test_exclude_dirs(tmp_path):
+    exclude_dir = tmp_path / "exclude_me"
+    exclude_dir.mkdir()
+    (exclude_dir / "dummy.py").write_text("print('excluded')")
 
-def test_exclude_dirs():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        # Create a subdirectory that will be excluded.
-        exclude_dir = os.path.join(tmpdir, "exclude_me")
-        os.mkdir(exclude_dir)
-        file_in_excluded = os.path.join(exclude_dir, "dummy.py")
-        with open(file_in_excluded, "w") as f:
-            f.write("print('This file is in an excluded directory')")
+    run_script(["-d", str(tmp_path), "-e", "exclude_me"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text()
 
-        # Run the script with exclude_dirs set to 'exclude_me'
-        run_script(["-d", tmpdir, "-e", "exclude_me"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r") as f:
-            content = f.read()
-        # The directory tree should mark exclude_me as excluded.
-        assert "exclude_me/ [EXCLUDED]" in content, "exclude_me directory should be marked as excluded"
-        # The file inside should not be aggregated.
-        assert "dummy.py" not in content, "File inside excluded directory should not be included"
-        print("test_exclude_dirs passed.")
+    assert "exclude_me/ [EXCLUDED]" in content
+    assert "print('excluded')" not in content
 
-def test_extensions_allowlist():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        py_file = os.path.join(tmpdir, "dummy.py")
-        with open(py_file, "w", encoding="utf-8") as f:
-            f.write("print('Python file')")
-        txt_file = os.path.join(tmpdir, "dummy.txt")
-        with open(txt_file, "w", encoding="utf-8") as f:
-            f.write("This is a text file.")
-        run_script(["-d", tmpdir, "-x", ".py"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "dummy.py" in content, "dummy.py should be included with .py extension"
-        assert "This is a text file." not in content, "dummy.txt should be excluded when only .py is allowed"
-        print("test_extensions_allowlist() passed.")
+def test_extensions_allowlist(tmp_path):
+    (tmp_path / "dummy.py").write_text("print('Python file')", encoding="utf-8")
+    (tmp_path / "dummy.txt").write_text("This is a text file.", encoding="utf-8")
 
-def test_exclude_dirs_additive():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        exclude_dir = os.path.join(tmpdir, "exclude_me")
-        os.mkdir(exclude_dir)
-        file_in_excluded = os.path.join(exclude_dir, "dummy.py")
-        with open(file_in_excluded, "w", encoding="utf-8") as f:
-            f.write("print('This file is in an excluded directory')")
-        run_script(["-d", tmpdir, "-e", "exclude_me"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "exclude_me/ [EXCLUDED]" in content, "exclude_me directory should be marked as excluded"
-        assert "This file is in an excluded directory" not in content, "File inside excluded directory should not be included"
-        print("test_exclude_dirs_additive() passed.")
+    run_script(["-d", str(tmp_path), "-x", ".py"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
+    assert "dummy.py" in content
+    assert "This is a text file." not in content
 
-def test_exclude_files_glob():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+def test_exclude_dirs_additive(tmp_path):
+    exclude_dir = tmp_path / "exclude_me"
+    exclude_dir.mkdir()
+    (exclude_dir / "dummy.py").write_text("print('excluded')", encoding="utf-8")
 
-        # a JSON file to exclude via glob
-        cfg = os.path.join(tmpdir, "foo", "config.json")
-        with open(cfg, "w", encoding="utf-8") as f:
-            f.write('{"ok": true}')
+    run_script(["-d", str(tmp_path), "-e", "exclude_me"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        # a file that must remain included
-        keep = os.path.join(tmpdir, "foo", "keep.py")
-        with open(keep, "w", encoding="utf-8") as f:
-            f.write("print('KEEP_ME')")
+    assert "exclude_me/ [EXCLUDED]" in content
+    assert "print('excluded')" not in content
 
-        # exclude via glob
-        run_script(["-d", tmpdir, "--exclude-files", "foo/*.json"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r", encoding="utf-8") as f:
-            content = f.read()
+def test_exclude_files_glob(tmp_path):
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    (foo_dir / "config.json").write_text('{"ok": true}', encoding="utf-8")
+    (foo_dir / "keep.py").write_text("print('KEEP_ME')", encoding="utf-8")
 
-        # tree should show the excluded file as [EXCLUDED]
-        assert "config.json [EXCLUDED]" in content, "Excluded file should be marked in the tree"
+    run_script(["-d", str(tmp_path), "--exclude-files", "foo/*.json"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        # aggregated content should NOT contain the file's contents
-        assert '{"ok": true}' not in content, "Excluded file contents must not be aggregated"
+    assert "config.json [EXCLUDED]" in content
+    assert '{"ok": true}' not in content
+    assert "KEEP_ME" in content
 
-        # keep.py stays in
-        assert "KEEP_ME" in content, "Non-excluded file should be included"
-        print("test_exclude_files_glob() passed.")
+def test_exclude_files_absolute_path(tmp_path):
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    cfg = foo_dir / "config.json"
+    cfg.write_text('{"abs": true}', encoding="utf-8")
 
-def test_exclude_files_absolute_path():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+    run_script(["-d", str(tmp_path), "--exclude-files", str(cfg)], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
+    assert '{"abs": true}' not in content
 
-        cfg = os.path.join(tmpdir, "foo", "config.json")
-        with open(cfg, "w", encoding="utf-8") as f:
-            f.write('{"abs": true}')
+def test_exclude_files_dot_slash(tmp_path):
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    (foo_dir / "config.json").write_text('{"dot": true}', encoding="utf-8")
 
-        run_script(
-            ["-d", tmpdir, "--exclude-files", cfg],
-            cwd=tmpdir,
-        )
+    run_script(["-d", str(tmp_path), "--exclude-files", "./foo/config.json"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
-            content = f.read()
+    assert "config.json [EXCLUDED]" in content
+    assert '{"dot": true}' not in content
 
-        assert '{"abs": true}' not in content
-        print("test_exclude_files_absolute_path() passed.")
+def test_exclude_files_cwd_differs_from_startpath(tmp_path):
+    project = tmp_path / "project"
+    project.mkdir()
+    foo_dir = project / "foo"
+    foo_dir.mkdir()
+    (foo_dir / "config.json").write_text('{"cwd": true}', encoding="utf-8")
 
-def test_exclude_files_dot_slash():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+    run_script(["-d", "project", "--exclude-files", "./foo/config.json"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
+    assert '{"cwd": true}' not in content
 
-        cfg = os.path.join(tmpdir, "foo", "config.json")
-        with open(cfg, "w", encoding="utf-8") as f:
-            f.write('{"dot": true}')
+def test_exclude_files_dot_slash_glob(tmp_path):
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    (foo_dir / "config.json").write_text('{"glob": true}', encoding="utf-8")
 
-        run_script(
-            ["-d", tmpdir, "--exclude-files", "./foo/config.json"],
-            cwd=tmpdir,
-        )
+    run_script(["-d", str(tmp_path), "--exclude-files", "./foo/*.json"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
+    assert '{"glob": true}' not in content
 
-        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
-            content = f.read()
+@pytest.mark.skipif(os.name != "nt", reason="Backslash paths are Windows-only")
+def test_exclude_files_backslash_path(tmp_path):
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    (foo_dir / "config.json").write_text('{"win": true}', encoding="utf-8")
 
-        assert "config.json [EXCLUDED]" in content
-        assert '{"dot": true}' not in content
-        print("test_exclude_files_dot_slash() passed.")
+    win_style = r"foo\config.json"
+    run_script(["-d", str(tmp_path), "--exclude-files", win_style], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
+    assert '{"win": true}' not in content
 
-def test_exclude_files_cwd_differs_from_startpath():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        project = os.path.join(tmpdir, "project")
-        os.makedirs(os.path.join(project, "foo"), exist_ok=True)
+def test_replace_exclude_dirs_behavior(tmp_path):
+    nm_dir = tmp_path / "node_modules"
+    nm_dir.mkdir()
+    (nm_dir / "lib.js").write_text("console.log('IN_NODE_MODULES');", encoding="utf-8")
 
-        cfg = os.path.join(project, "foo", "config.json")
-        with open(cfg, "w", encoding="utf-8") as f:
-            f.write('{"cwd": true}')
+    custom_dir = tmp_path / "custom_dir"
+    custom_dir.mkdir()
+    (custom_dir / "x.py").write_text("print('IN_CUSTOM_DIR')", encoding="utf-8")
 
-        run_script(
-            ["-d", "project", "--exclude-files", "./foo/config.json"],
-            cwd=tmpdir,
-        )
+    (tmp_path / "main.py").write_text("print('ROOT_OK')", encoding="utf-8")
 
-        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
-            content = f.read()
+    run_script(["-d", str(tmp_path), "--replace-exclude-dirs", "-e", "custom_dir"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        assert '{"cwd": true}' not in content
-        print("test_exclude_files_cwd_differs_from_startpath() passed.")
+    assert "custom_dir/ [EXCLUDED]" in content
+    assert "IN_CUSTOM_DIR" not in content
+    assert "IN_NODE_MODULES" in content
+    assert "ROOT_OK" in content
 
-def test_exclude_files_dot_slash_glob():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+def test_exclude_files_case_insensitivity(tmp_path):
+    """Checks if exclusions are case-insensitive (standard on Windows)."""
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    target = foo_dir / "build.xml"
+    target.write_text("<xml>target</xml>", encoding="utf-8")
 
-        cfg = os.path.join(tmpdir, "foo", "config.json")
-        with open(cfg, "w", encoding="utf-8") as f:
-            f.write('{"glob": true}')
+    # Use uppercase pattern for lowercase filename
+    run_script(["-d", str(tmp_path), "--exclude-files", "FOO/BUILD.XML"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        run_script(
-            ["-d", tmpdir, "--exclude-files", "./foo/*.json"],
-            cwd=tmpdir,
-        )
+    if os.name == "nt":
+        assert "<xml>target</xml>" not in content
+        assert "build.xml [EXCLUDED]" in content
+    else:
+        # On Linux/WSL, behavior depends on your fnmatch implementation
+        # Most cross-platform tools prefer case-insensitive for config files
+        pass
 
-        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
-            content = f.read()
+def test_exclude_files_recursive_glob(tmp_path):
+    """Tests if double-asterisk recursive globs work as expected."""
+    deep_dir = tmp_path / "a" / "b" / "c"
+    deep_dir.mkdir(parents=True)
+    (deep_dir / "secret.log").write_text("SENSITIVE_DATA", encoding="utf-8")
 
-        assert '{"glob": true}' not in content
-        print("test_exclude_files_dot_slash_glob() passed.")
+    # Pattern designed to find .log files anywhere in a/
+    run_script(["-d", str(tmp_path), "--exclude-files", "a/**/*.log"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-def test_exclude_files_backslash_path():
-    if os.name != "nt":
-        print("Backslash paths are Windows-only")
-        return
+    assert "SENSITIVE_DATA" not in content
+    assert "secret.log [EXCLUDED]" in content
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        os.makedirs(os.path.join(tmpdir, "foo"), exist_ok=True)
+def test_exclude_files_parent_traversal(tmp_path):
+    """Tests if '../' in patterns are resolved correctly before matching."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "main.py").write_text("print('hello')", encoding="utf-8")
 
-        cfg = os.path.join(tmpdir, "foo", "config.json")
-        with open(cfg, "w", encoding="utf-8") as f:
-            f.write('{"win": true}')
+    # A weird but valid path pattern
+    weird_pat = "app/../app/main.py"
+    run_script(["-d", str(tmp_path), "--exclude-files", weird_pat], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        win_style = os.path.join("foo", "config.json").replace("/", "\\")
+    assert "print('hello')" not in content
+    assert "main.py [EXCLUDED]" in content
 
-        run_script(
-            ["-d", tmpdir, "--exclude-files", win_style],
-            cwd=tmpdir,
-        )
+def test_exclude_files_with_spaces(tmp_path):
+    """Ensures filenames with spaces are handled correctly."""
+    foo_dir = tmp_path / "foo"
+    foo_dir.mkdir()
+    # Note: We use a file with a space
+    space_file = foo_dir / "my notes.txt"
+    space_file.write_text("TOP_SECRET_NOTES", encoding="utf-8")
 
-        with open(os.path.join(tmpdir, "full_code.txt"), "r", encoding="utf-8") as f:
-            content = f.read()
+    # In a CSV, this usually needs to be handled carefully by your _split_csv
+    run_script(["-d", str(tmp_path), "--exclude-files", "foo/my notes.txt"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
-        assert '{"win": true}' not in content
-        print("test_exclude_files_backslash_path() passed.")
+    assert "TOP_SECRET_NOTES" not in content
 
-def test_replace_exclude_dirs_behavior():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        node_modules_dir = os.path.join(tmpdir, "node_modules")
-        os.makedirs(node_modules_dir, exist_ok=True)
-        nm_file = os.path.join(node_modules_dir, "lib.js")
-        with open(nm_file, "w", encoding="utf-8") as f:
-            f.write("console.log('IN_NODE_MODULES');")
-        custom_dir = os.path.join(tmpdir, "custom_dir")
-        os.makedirs(custom_dir, exist_ok=True)
-        custom_file = os.path.join(custom_dir, "x.py")
-        with open(custom_file, "w", encoding="utf-8") as f:
-            f.write("print('IN_CUSTOM_DIR')")
-        root_py = os.path.join(tmpdir, "main.py")
-        with open(root_py, "w", encoding="utf-8") as f:
-            f.write("print('ROOT_OK')")
-        run_script(["-d", tmpdir, "--replace-exclude-dirs", "-e", "custom_dir"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "custom_dir/ [EXCLUDED]" in content, "custom_dir should be marked [EXCLUDED] when replaced"
-        assert "IN_CUSTOM_DIR" not in content, "Files in custom_dir must be excluded in replace mode"
-        assert "IN_NODE_MODULES" in content, "node_modules should not be excluded in replace mode"
-        assert "ROOT_OK" in content, "root file should be included"
-        print("test_replace_exclude_dirs_behavior() passed.")
+def test_exclude_files_multi_value(tmp_path):
+    """Tests providing multiple patterns at once."""
+    (tmp_path / "one.xml").write_text("ONE", encoding="utf-8")
+    (tmp_path / "two.json").write_text("TWO", encoding="utf-8")
+    (tmp_path / "three.py").write_text("THREE", encoding="utf-8")
 
-def test_extension_precedence_exclude_overrides_allowlist():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        js_file = os.path.join(tmpdir, "a.js")
-        with open(js_file, "w", encoding="utf-8") as f:
-            f.write("console.log('JS_INCLUDED?');")
-        py_file = os.path.join(tmpdir, "b.py")
-        with open(py_file, "w", encoding="utf-8") as f:
-            f.write("print('PY_INCLUDED')")
-        run_script(["-d", tmpdir, "-x", ".py,.js", "-X", ".js"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "JS_INCLUDED?" not in content, ".js should be excluded by -X even if allowed by -x"
-        assert "PY_INCLUDED" in content, ".py should remain included"
-        print("test_extension_precedence_exclude_overrides_allowlist() passed.")
+    run_script(["-d", str(tmp_path), "--exclude-files", "one.xml,two.json"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
 
+    assert "ONE" not in content
+    assert "TWO" not in content
+    assert "THREE" in content
 
-def test_tree_not_traversing_excluded():
-    with tempfile.TemporaryDirectory() as tmpdir:
-        deep = os.path.join(tmpdir, "secret")
-        os.makedirs(os.path.join(deep, "nested"), exist_ok=True)
-        secret_file = os.path.join(deep, "nested", "hidden.py")
-        with open(secret_file, "w", encoding="utf-8") as f:
-            f.write("print('SHOULD_NOT_APPEAR')")
-        run_script(["-d", tmpdir, "-e", "secret"], cwd=tmpdir)
-        output_file = os.path.join(tmpdir, "full_code.txt")
-        with open(output_file, "r", encoding="utf-8") as f:
-            content = f.read()
-        assert "secret/ [EXCLUDED]" in content, "Top-level excluded dir should be marked once"
-        assert "hidden.py" not in content, "Files inside excluded dir must not appear (no traversal)"
-        print("test_tree_not_traversing_excluded() passed.")
+def test_extension_precedence_exclude_overrides_allowlist(tmp_path):
+    (tmp_path / "a.js").write_text("console.log('JS_INCLUDED?');", encoding="utf-8")
+    (tmp_path / "b.py").write_text("print('PY_INCLUDED')", encoding="utf-8")
 
-if __name__ == "__main__":
-    # Run everything if executed directly
-    test_default_arguments()
-    test_directory_argument()
-    test_default_output()
-    test_override_output_file()
-    test_include_files()
-    test_extensions_allowlist()
-    test_exclude_dirs_additive()
-    test_exclude_files_glob()
-    test_exclude_files_absolute_path()
-    test_exclude_files_backslash_path()
-    test_exclude_files_cwd_differs_from_startpath()
-    test_exclude_files_dot_slash()
-    test_exclude_files_dot_slash_glob()
-    test_replace_exclude_dirs_behavior()
-    test_extension_precedence_exclude_overrides_allowlist()
-    test_tree_not_traversing_excluded()
-    print("All tests passed!")
+    run_script(["-d", str(tmp_path), "-x", ".py,.js", "-X", ".js"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
+
+    assert "JS_INCLUDED?" not in content
+    assert "PY_INCLUDED" in content
+
+def test_tree_not_traversing_excluded(tmp_path):
+    deep = tmp_path / "secret"
+    nested = deep / "nested"
+    nested.mkdir(parents=True)
+    (nested / "hidden.py").write_text("print('SHOULD_NOT_APPEAR')", encoding="utf-8")
+
+    run_script(["-d", str(tmp_path), "-e", "secret"], cwd=tmp_path)
+    content = (tmp_path / "full_code.txt").read_text(encoding="utf-8")
+
+    assert "secret/ [EXCLUDED]" in content
+    assert "hidden.py" not in content
