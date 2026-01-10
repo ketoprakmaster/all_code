@@ -227,10 +227,7 @@ def file_matches_exclude(filepath: str, exclude_file_globs, startpath: str) -> b
     Match file against user-provided exclude patterns.
     All comparisons are done on normalized absolute paths.
     """
-    try:
-        abs_path = str(pathlib.Path(filepath).resolve())
-    except Exception:
-        abs_path = os.path.normpath(os.path.abspath(filepath))
+    abs_path = str(pathlib.Path(filepath).absolute().resolve(strict=False))
 
     for pat in exclude_file_globs:
         # Exact match
@@ -423,17 +420,14 @@ def main():
     # 3) File-level excludes (exact and glob)
     # Normalize --exclude-files patterns (relative → startpath, remove ./, fix slashes)
     exclude_file_globs = []
-    for raw in _split_csv(args.exclude_files):
-        pat = os.path.expanduser(raw)
+    for pat in _split_csv(args.exclude_files):
+        pat = pathlib.Path(pat)
 
         # If relative, anchor to startpath (NOT cwd)
-        if not os.path.isabs(pat):
-            pat = os.path.join(startpath, pat)
+        if not pat.is_absolute():
+            pat = pathlib.Path(startpath) / pat
 
-        try:
-            pat = str(pathlib.Path(pat).resolve())
-        except Exception:
-            pat = os.path.normpath(pat)
+        pat = str(pathlib.Path(pat).absolute().resolve(strict=False))
 
         exclude_file_globs.append(pat)
 
