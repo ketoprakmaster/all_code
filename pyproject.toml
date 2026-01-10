@@ -25,3 +25,8 @@ include = [
 
 [tool.hatch.build.targets.wheel]
 
+[dependency-groups]
+dev = [
+    "pytest>=7.4.4",
+]
+
